@@ -217,19 +217,18 @@ _show_version() {
 _show_usage(){
     cat <<EOF
 
-    ${SCRIPT_NAME}
+${BOLD}${CYAN}mkvnote${RESET} — Matroska Metadata Editor
 
-    This application will embed key:value pairs ("tags") into a Matroska file.
-   
-    "${BOLD}Usage:${RESET} ${SCRIPT_NAME} <mkv_file>"
+${BOLD}USAGE${RESET}
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} <mkv_file>          Open GUI editor for a single MKV file
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} <csv_file>          Batch-embed metadata from CSV into MKV files
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -i <mkv_file> ...   Inspect tags (formatted table)
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -c <mkv_file> ...   Export tags to CSV
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -d <mkv_file> ...   Delete global tags
 
-    To open a metadata editor GUI for the mkv_file, or
+${DIM}For edge-case debugging: ${SCRIPT_NAME} -ii <mkv_file> ...${RESET}
+${DIM}Use -h or --help for full documentation and options${RESET}
 
-    "${BOLD}Usage:${RESET} ${SCRIPT_NAME} <my_csv_of_metadata.csv>"
-
-    to batch-embed metadata from a csv into a set of files (the first column of the csv must be 'filename' and contain the path to the mkv file)
-
-    ${DIM}Use -h or --help for detailed information and additional options${RESET}
 EOF
 exit
 }
