@@ -768,11 +768,13 @@ cat > "${DIALOG_FORM}" <<EOF
             ${EXTRA_TAG_LIST}
         </vbox>
         <hbox space-expand="false" space-fill="false">
+            <!-- Settings button disabled until implemented
             <button>
                 <label>Settings</label>
                 <input file stock="gtk-index"></input>
                 <variable export="false">settings_button</variable>
             </button>
+            -->
             <hbox space-expand="true" space-fill="true">
                 <text>
                     <label>""</label>
