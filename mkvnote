@@ -295,6 +295,12 @@ _write_tags_to_mkv() {
 
 _check_dependencies csvprintf xmlstarlet mkvpropedit mkvextract xml2csv cowsay
 
+if [[ ! -t 0 ]]; then
+    STDIN_TMP="$(_maketemp).csv"
+    cat > "${STDIN_TMP}"
+    set -- "${STDIN_TMP}" "$@"
+fi
+
 # Handle no arguments
 if [[ $# -eq 0 ]]; then
     echo "${ERROR}✗ No input file provided${RESET}"
