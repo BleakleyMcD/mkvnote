@@ -630,7 +630,6 @@ _make_field() {
         if _needs_file_input "${VALUE}"; then
             INPUT_CMD="<input file>${VALUE_FILE}</input>"
         else
-            VALUE="$(cat "${VALUE_FILE}")"
             INPUT_CMD="<default>${VALUE}</default>"
         fi
     else
