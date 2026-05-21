@@ -605,7 +605,8 @@ echo "${ATTACHMENT_LIST}" > "${ATTACHMENT_FILE}"
 _needs_file_input() {
     local VALUE="${1}"
     # Is it multilined?
-    [[ "${VALUE}" == *$'\n'* || "${VALUE}" == *$'\r'* || "${VALUE}" == *$'&'* ]] && return 0
+    [[ "${VALUE}" == *$'\n'* || "${VALUE}" == *$'\r'* ]] && return 0
+    [[ "${VALUE}" == *'&'* || "${VALUE}" == *'<'* || "${VALUE}" == *'>'* || "${VALUE}" == *'"'* ]] && return 0
     # Does it use special characters?
     [[ "${VALUE}" =~ [[:cntrl:]] ]] && return 0
     return 1
