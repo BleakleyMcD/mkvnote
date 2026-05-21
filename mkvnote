@@ -631,7 +631,8 @@ _make_field() {
         if _needs_file_input "${VALUE}"; then
             INPUT_CMD="<input file>${VALUE_FILE}</input>"
         else
-            INPUT_CMD="<default>${VALUE}</default>"
+            ESCAPED_VALUE="$(printf '%s' "${VALUE}" | xmlstarlet esc)"
+            INPUT_CMD="<default>${ESCAPED_VALUE}</default>"
         fi
     else
         INPUT_CMD=""
