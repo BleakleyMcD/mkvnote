@@ -182,6 +182,28 @@ ${CYAN}-d|--drop${RESET} delete the global tags
     This option is mostly used for debugging. It will remove all global tags (except the ffmpeg ENCODER
     tag) from all input mkv files. Warning this is a destructive, irreversible process.
 
+${CYAN}-s|--set${RESET} set a global tag
+
+        Set a global tag KEY=VALUE in one or more mkv files.
+        By default, overwrites any existing value for that key.
+        Use -n or --no-overwrite to fail if the key already has a value.
+
+        $ mkvnote -s KEY=VALUE file1.mkv file2.mkv
+        $ mkvnote -s KEY=VALUE -n file1.mkv
+        
+        Example: mkvnote --set Lyrics="First I tried mkvnote ....." file.mkv
+
+${CYAN}-s|--set${RESET} prevent overwriting data while setting a tag
+
+        See the -s option above.
+
+${CYAN}-r|--remove${RESET} remove a global tag
+
+        Remove a global tag key from one or more mkv files.
+        Has no effect if the key does not exist.
+
+        $ mkvnote -r KEY file1.mkv file2.mkv
+
 ${BOLD}DEPENDENCIES${RESET}
     Required: mkvtoolnix (mkvpropedit, mkvextract), xmlstarlet, mediainfo, perl
     GUI:      mkvnote-gui (Qt-based, see mkvnote-gui)
@@ -210,11 +232,13 @@ _show_usage(){
 ${BOLD}${CYAN}mkvnote${RESET} — Matroska Metadata Editor
 
 ${BOLD}USAGE${RESET}
-    ${GREEN}\$${RESET} ${SCRIPT_NAME} <mkv_file>          Open GUI editor for a single MKV file
-    ${GREEN}\$${RESET} ${SCRIPT_NAME} <csv_file>          Batch-embed metadata from CSV into MKV files
-    ${GREEN}\$${RESET} ${SCRIPT_NAME} -i <mkv_file> ...   Inspect tags (formatted table)
-    ${GREEN}\$${RESET} ${SCRIPT_NAME} -c <mkv_file> ...   Export tags to CSV
-    ${GREEN}\$${RESET} ${SCRIPT_NAME} -d <mkv_file> ...   Delete global tags
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} <mkv_file>                        Open GUI editor for a single MKV file
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} <csv_file>                        Batch-embed metadata from CSV into MKV files
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -i <mkv_file> ...                 Inspect tags (formatted table)
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -c <mkv_file> ...                 Export tags to CSV
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -d <mkv_file> ...                 Delete global tags
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -s <KEY>=<VALUE> <mkv_file> ...   Add the specified metadata value to the file
+    ${GREEN}\$${RESET} ${SCRIPT_NAME} -r <KEY> ...                      Delete the global tag named 'KEY'
 
 ${DIM}For edge-case debugging: ${SCRIPT_NAME} -ii <mkv_file> ...${RESET}
 ${DIM}Use -h or --help for full documentation and options${RESET}
@@ -282,6 +306,109 @@ _write_tags_to_mkv() {
     fi
 }
 
+_set_tag(){
+    local INPUT_FILE="${1}"
+    local KEY="${TAG_SET_PAIR%%=*}"
+    local VALUE="${TAG_SET_PAIR#*=}"
+    local EXTRACTED_TAGS EXISTING_VALUE XML_DRAFT
+
+    [[ -z "${KEY}" || -z "${VALUE}" ]] && { echo "${ERROR}✗ Invalid KEY=VALUE: ${TAG_SET_PAIR}${RESET}" >&2 ; return 1 ; }
+
+    EXTRACTED_TAGS="$(_maketemp).xml"
+    mkvextract tags "${INPUT_FILE}" > "${EXTRACTED_TAGS}" 2>/dev/null
+
+    # Check for existing value if --no-overwrite
+    if [[ "${NO_OVERWRITE}" == true ]] ; then
+        EXISTING_VALUE="$(xmlstarlet sel -t -v \
+            "//Tag[not(Targets) or count(Targets/*)=0]/Simple[Name='${KEY}']/String" \
+            "${EXTRACTED_TAGS}" 2>/dev/null)"
+        if [[ -n "${EXISTING_VALUE}" ]] ; then
+            echo "${ERROR}✗ ${KEY} already set to '${EXISTING_VALUE}' in $(basename "${INPUT_FILE}") — skipping (--no-overwrite)${RESET}" >&2
+            rm -f "${EXTRACTED_TAGS}"
+            return 1
+        fi
+    fi
+
+    # Build new XML, merge existing tags, set/overwrite KEY
+    XML_DRAFT="$(_maketemp).xml"
+    _write_tags_from_extracted "${EXTRACTED_TAGS}" "${KEY}" "${VALUE}" > "${XML_DRAFT}"
+
+    mkvpropedit "${INPUT_FILE}" --tags "global:${XML_DRAFT}" \
+        && echo "${GREEN}Set ${KEY}=${VALUE} in $(basename "${INPUT_FILE}")${RESET}" \
+        || echo "${ERROR}mkvpropedit failed for $(basename "${INPUT_FILE}")${RESET}" >&2
+
+    rm -f "${EXTRACTED_TAGS}" "${XML_DRAFT}"
+}
+
+_remove_tag(){
+    local INPUT_FILE="${1}"
+    local KEY="${TAG_REMOVE_KEY}"
+    local EXTRACTED_TAGS XML_DRAFT
+
+    [[ -z "${KEY}" ]] && { echo "${ERROR}Error: No key specified${RESET}" >&2 ; return 1 ; }
+
+    EXTRACTED_TAGS="$(_maketemp).xml"
+    mkvextract tags "${INPUT_FILE}" > "${EXTRACTED_TAGS}" 2>/dev/null
+
+    # Check to see if that metadata key already exists
+    local EXISTING_VALUE
+    EXISTING_VALUE="$(xmlstarlet sel -t -v \
+        "//Tag[not(Targets) or count(Targets/*)=0]/Simple[Name='${KEY}']/String" \
+        "${EXTRACTED_TAGS}" 2>/dev/null)"
+    if [[ -z "${EXISTING_VALUE}" ]] ; then
+        echo "${YELLOW}! ${KEY} not found in $(basename "${INPUT_FILE}") — skipping${RESET}"
+        rm -f "${EXTRACTED_TAGS}"
+        return 0
+    fi
+
+    # Rebuild the XML without the removed key
+    XML_DRAFT="$(_maketemp).xml"
+    _write_tags_from_extracted "${EXTRACTED_TAGS}" "${KEY}" "" --remove > "${XML_DRAFT}"
+
+    mkvpropedit "${INPUT_FILE}" --tags "global:${XML_DRAFT}" \
+        && echo "${GREEN}Removed ${KEY} from $(basename "${INPUT_FILE}")${RESET}" \
+        || echo "${ERROR}mkvpropedit failed for $(basename "${INPUT_FILE}")${RESET}" >&2
+
+    rm -f "${EXTRACTED_TAGS}" "${XML_DRAFT}"
+}
+
+
+_write_tags_from_extracted(){
+    local EXTRACTED_XML="${1}"
+    local KEY="${2}"
+    local VALUE="${3}"
+    local MODE="${4}"   # "--remove" to delete key, otherwise set/overwrite
+
+    # Get all existing global tag key=value pairs
+    declare -A TAGS
+    while IFS='=' read -r k v ; do
+        [[ -n "${k}" ]] && TAGS["${k}"]="${v}"
+    done < <(xmlstarlet sel -t \
+        -m "//Tag[not(Targets) or count(Targets/*)=0]/Simple" \
+        -v "Name" -o "=" -v "String" -n \
+        "${EXTRACTED_XML}" 2>/dev/null)
+
+    # Apply the change
+    if [[ "${MODE}" == "--remove" ]] ; then
+        unset "TAGS[${KEY}]"
+    else
+        TAGS["${KEY}"]="${VALUE}"
+    fi
+
+    # Write the XML
+    echo '<?xml version="1.0"?>'
+    echo '<Tags>'
+    echo '  <Tag>'
+    echo '    <Targets />'
+    for k in "${!TAGS[@]}" ; do
+        echo "    <Simple>"
+        echo "      <Name>${k}</Name>"
+        echo "      <String>${TAGS[$k]}</String>"
+        echo "    </Simple>"
+    done
+    echo '  </Tag>'
+    echo '</Tags>'
+}
 
 _check_dependencies csvprintf xmlstarlet mkvpropedit mkvextract xml2csv cowsay
 
@@ -322,6 +449,18 @@ while [[ $# -gt 0 ]]; do
         -d|--drop)
             MKVGLOBALRM="Y"
             ;;
+        -s|--set)
+            TAG_SET_PAIR="${2}"
+            shift
+            ;;
+        -n|--no-overwrite)
+            NO_OVERWRITE=true
+            shift
+            ;;
+        -r|--remove)
+            TAG_REMOVE_KEY="${2}"
+            shift
+            ;;
         -*)
             echo "${ERROR}✗ Unknown option: $1${RESET}"
             _show_usage
@@ -346,6 +485,7 @@ if [[ "${#}" -eq 0 ]]; then
 fi
 
 INPUT_FILE="${1}"
+INPUT_FILES=("$@")
 EXTENSION="${INPUT_FILE##*.}"
 
 if [[ -z "${INPUT_FILE}" ]]; then
@@ -557,6 +697,23 @@ if [[ "$MKVGLOBALRM" == "Y" ]] ; then
     exit
 fi
 
+# set a tag
+if [[ -n "${TAG_SET_PAIR}" ]] ; then
+    for INPUT_FILE in "${INPUT_FILES[@]}" ; do
+        _set_tag "${INPUT_FILE}"
+    done
+    exit 0
+fi
+
+# remove a tag
+if [[ -n "${TAG_REMOVE_KEY}" ]] ; then
+    for INPUT_FILE in "${INPUT_FILES[@]}" ; do
+        _remove_tag "${INPUT_FILE}"
+    done
+    exit 0
+fi
+
+# gui mode
 if [[ -x "${SCRIPT_DIR}/mkvnote-gui" ]]; then
     "${SCRIPT_DIR}/mkvnote-gui" "${INPUT_FILE}"
 elif [[ -x "${SCRIPT_DIR}/_build/mkvnote-gui" ]]; then
