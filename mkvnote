@@ -259,7 +259,7 @@ _write_tag_to_xml() {
     local TAG_VALUE="$2"
     local XML_DRAFT="$3"
     local ESCAPED_VALUE
-    ESCAPED_VALUE="$(printf '%s' "${TAG_VALUE}" | xmlstarlet esc)"
+    ESCAPED_VALUE="$(printf '%s' "${TAG_VALUE}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
     xml ed --omit-decl --inplace \
         --subnode "/Tags/Tag[(not(Targets) or count(Targets/*)=0) and not(Simple/Name='${TAG_NAME}')]" --type elem -n "Simple" \
         --subnode "/Tags/Tag[not(Targets) or count(Targets/*)=0]/Simple[not(Name)]" --type elem -n "Name" -v "${TAG_NAME}" \
@@ -294,6 +294,12 @@ _write_tags_to_mkv() {
 
 
 _check_dependencies csvprintf xmlstarlet mkvpropedit mkvextract xml2csv cowsay
+
+if [[ ! -t 0 ]]; then
+    STDIN_TMP="$(_maketemp).csv"
+    cat > "${STDIN_TMP}"
+    set -- "${STDIN_TMP}" "$@"
+fi
 
 # Handle no arguments
 if [[ $# -eq 0 ]]; then
@@ -363,17 +369,21 @@ if [[ ! -f "${INPUT_FILE}" ]]; then
     exit 1
 fi
 
-if [[ ! "${INPUT_FILE}" =~ \.[Mm][Kk][Vv]$ && ! "${MKV2CSV}" = "Y" ]]; then
-    echo "${YELLOW}! Warning: File does not have .mkv extension${RESET}"
+if [[ ! "${INPUT_FILE}" =~ \.[Mm][Kk][Vv]$ && ! "${INPUT_FILE}" =~ \.[Cc][Ss][Vv]$ && ! "${MKV2CSV}" = "Y" ]]; then
+    echo "${YELLOW}! Warning: File does not have .mkv or .csv extensions${RESET}"
 fi
 
 if [[ "${EXTENSION}" == "csv" ]] ; then
+    if [[ "${MKVINFO}" == "Y" || "${MKV2CSV}" == "Y" ]]; then
+        echo "${ERROR}! Error: -i or -c flags do not work with a CSV input.${RESET}"
+        exit 1
+    fi
     CSV_XML="$(_maketemp).xml"
-    csvprintf -X -f "${INPUT_FILE}" > "${CSV_XML}"
+    csvprintf -X -e UTF-8 -f "${INPUT_FILE}" > "${CSV_XML}"
     ELEMENT_LIST="$(xmlstarlet sel -t -m "/csv/row[1]/*" -v "name()" -n "${CSV_XML}")"
     FILENAME_FOUND=0
     echo "Examining the csv: ${CSV_XML}."
-    while read ELEMENT_VALUE ; do
+    while read -r ELEMENT_VALUE ; do
         if [[ "${ELEMENT_VALUE//_}" == "filename" ]] ; then
             FILENAME_COLUMN_NAME="${ELEMENT_VALUE}"
             ELEMENT_VALUE="filename"
@@ -399,7 +409,7 @@ if [[ "${EXTENSION}" == "csv" ]] ; then
         exit 1
     fi
     ROW_COUNTER=1
-    while read FILE_IN_CSV ; do
+    while read -r FILE_IN_CSV ; do
         ((ROW_COUNTER++))
         if [[ -z "${FILE_IN_CSV}" ]] ; then
             echo "${BOLD}${ERROR}Warning, the filename column on row ${ROW_COUNTER} is empty.${RESET}"
@@ -418,7 +428,7 @@ if [[ "${EXTENSION}" == "csv" ]] ; then
     else
         echo "${BOLD}Nice. All files from the csv are found. Let's tag.${RESET}"
     fi
-    while read FILE_IN_CSV ; do
+    while read -r FILE_IN_CSV ; do
         # Initialize log for each MKV file
         _init_log "${FILE_IN_CSV}"
         _log "INFO" "CSV batch mode - tagging from ${INPUT_FILE}"
@@ -433,7 +443,7 @@ if [[ "${EXTENSION}" == "csv" ]] ; then
         echo "---------------------|---------------------"
 
         TAG_COUNT=0
-        while read TAG_NAME ; do
+        while read -r TAG_NAME ; do
             TAG_VALUE="$(xmlstarlet sel -t -m "/csv/row[${FILENAME_COLUMN_NAME}='${FILE_IN_CSV}']/${TAG_NAME}" -v "." -n "${CSV_XML}")"
             if [[ "${TAG_NAME//_}" == "filename" ]] ; then
                 TAG_NAME="filename"
@@ -451,16 +461,18 @@ if [[ "${EXTENSION}" == "csv" ]] ; then
             if [[ -n "${TAG_VALUE// /}" && "${TAG_NAME//_}" != "filename" ]] ; then
                 ((TAG_COUNT++))
                 _log "INFO" "Setting tag: ${TAG_NAME}"
+                TAG_VALUE="$(printf '%s' "${TAG_VALUE}" | sed 's/&amp;/\&/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&apos;/'"'"'/g')"
+                TAG_VALUE_ESC="$(printf '%s' "${TAG_VALUE}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
                 if echo "${EXISTING_TAGS}" | grep -Fxq "${TAG_NAME}"; then
                     xml ed --omit-decl -P --inplace \
-                        --update "(/Tags/Tag[Simple/Name='${TAG_NAME}'])[last()]/Simple[Name='${TAG_NAME}']/String" -v "${TAG_VALUE}" \
-                        "${XML_DRAFT}"
+                        --update "(/Tags/Tag[Simple/Name='${TAG_NAME}'])[last()]/Simple[Name='${TAG_NAME}']/String" \
+                        -v "${TAG_VALUE_ESC}" "${XML_DRAFT}"
                 else
                     _write_tag_to_xml "${TAG_NAME}" "${TAG_VALUE}" "${XML_DRAFT}"
                 fi
             fi
             printf "%-22s" "$TAG_NAME"
-            echo "$TAG_VALUE" | sed '1n; s/^/                      /'
+            echo "$TAG_VALUE" | sed 's/&amp;/\&/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g' | sed '1n; s/^/                      /'
 
         done < <(xmlstarlet sel -t -m "/csv/row[${FILENAME_COLUMN_NAME}='${FILE_IN_CSV}']/*[normalize-space(.) != '']" -v "name()" -n "${CSV_XML}")
         echo
@@ -477,7 +489,7 @@ fi
 
 if [[ "${MKV2CSV}" == "Y" ]] ; then
     INPUT_FILES=("$@")
-    while [[ "${@}" != "" ]] ; do
+    while [[ "$*" != "" ]] ; do
         INPUT_FILE="${1}"
         shift
         EXTRACTED_TAGS="$(_maketemp).xml"
@@ -493,7 +505,7 @@ if [[ "${MKV2CSV}" == "Y" ]] ; then
         XML_ED_INSTRUCTIONS=()
         EXTRACTED_TAGS="$(_maketemp).xml"
         mkvextract tags "${INPUT_FILE}" > "${EXTRACTED_TAGS}"
-        while read UNIQUE_TAG ; do
+        while read -r UNIQUE_TAG ; do
             UNIQUE_TAG_VALUE="$(xmlstarlet sel -t -m "/Tags/Tag[Targets='' or not(Targets) or (Targets/TargetTypeValue='50' and not(Targets/TrackUID))]/Simple[Name='${UNIQUE_TAG}']" -v "String" -n "${EXTRACTED_TAGS}")"
             if [[ "${UNIQUE_TAG}" == "${UNIQUE_TAG// /}" ]] ; then
                 XML_ED_INSTRUCTIONS+=(--subnode "/csv/row[not(${UNIQUE_TAG})]" --type elem -n "${UNIQUE_TAG}" -v "${UNIQUE_TAG_VALUE}")
@@ -516,7 +528,7 @@ fi
 
 if [[ "$MKVINFO" == "Y" ]] ; then
     INPUT_FILES=("$@")
-    while [[ "${@}" != "" ]] ; do
+    while [[ "$*" != "" ]] ; do
         # get context about the input
         INPUT_FILE="${1}"
         shift
@@ -539,7 +551,7 @@ if [[ "$MKVGLOBALRM" == "Y" ]] ; then
     echo "This process will delete all the global tags in all the input files. Are you sure? Type 'Y' to proceed, anything else to quit."
     read -p "Really? " DELETE_CHOICE
     if [[ "${DELETE_CHOICE}" =~ ^[Yy]$ ]] ; then
-        while [[ "${@}" != "" ]] ; do
+        while [[ "$*" != "" ]] ; do
             INPUT_FILE="${1}"
             shift
             echo "Deleting global tags for ${INPUT_FILE}..."
@@ -605,7 +617,8 @@ echo "${ATTACHMENT_LIST}" > "${ATTACHMENT_FILE}"
 _needs_file_input() {
     local VALUE="${1}"
     # Is it multilined?
-    [[ "${VALUE}" == *$'\n'* || "${VALUE}" == *$'\r'* || "${VALUE}" == *$'&'* ]] && return 0
+    [[ "${VALUE}" == *$'\n'* || "${VALUE}" == *$'\r'* ]] && return 0
+    [[ "${VALUE}" == *'&'* || "${VALUE}" == *'<'* || "${VALUE}" == *'>'* || "${VALUE}" == *'"'* ]] && return 0
     # Does it use special characters?
     [[ "${VALUE}" =~ [[:cntrl:]] ]] && return 0
     return 1
@@ -630,8 +643,8 @@ _make_field() {
         if _needs_file_input "${VALUE}"; then
             INPUT_CMD="<input file>${VALUE_FILE}</input>"
         else
-            VALUE="$(cat "${VALUE_FILE}")"
-            INPUT_CMD="<default>${VALUE}</default>"
+            ESCAPED_VALUE="$(printf '%s' "${VALUE}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
+            INPUT_CMD="<default>${ESCAPED_VALUE}</default>"
         fi
     else
         INPUT_CMD=""
@@ -697,7 +710,7 @@ done
 RO_FIELDS+="$(_make_field "ATTACHMENTS" "$ATTACHMENT_FILE" "no" "yes")"
 LIST_OF_KEYS+=("ATTACHMENTS")
 
-while read EXISTING_KEY ; do
+while read -r EXISTING_KEY ; do
     DIALOG_LIST+="${EXISTING_KEY} "
     _in_list "${EXISTING_KEY}" "${RO_TAGS[@]}" && continue
     _in_list "${EXISTING_KEY}" "${MKV_TAG_SET_NMAAHC[@]}" || continue
@@ -708,7 +721,7 @@ while read EXISTING_KEY ; do
     DIALOG_LIST_EMBEDDED+="$(_make_field "${EXISTING_KEY}" "${TEMP_DIALOG_VALUE}" "if" "no")"
 done < "${EXISTING_TAGS}"
 
-while read EXTRA_KEY ; do
+while read -r EXTRA_KEY ; do
     DIALOG_LIST+="${EXTRA_KEY} "
     _in_list "${EXTRA_KEY}" "${RO_TAGS[@]}" && continue
     _in_list "${EXTRA_KEY}" "${MKV_TAG_SET_NMAAHC[@]}" && continue
@@ -768,18 +781,6 @@ cat > "${DIALOG_FORM}" <<EOF
             ${EXTRA_TAG_LIST}
         </vbox>
         <hbox space-expand="false" space-fill="false">
-            <!-- Settings button disabled until implemented
-            <button>
-                <label>Settings</label>
-                <input file stock="gtk-index"></input>
-                <variable export="false">settings_button</variable>
-            </button>
-            -->
-            <hbox space-expand="true" space-fill="true">
-                <text>
-                    <label>""</label>
-                </text>
-            </hbox>
             <button>
                 <label>Tag-On!</label>
                 <input file stock="gtk-media-record"></input>
