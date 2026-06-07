@@ -421,9 +421,9 @@ fi
 # Handle no arguments
 if [[ $# -eq 0 ]]; then
     if [[ -t 0 ]]; then
-    echo "${ERROR}✗ No input file provided${RESET}"
-    _show_usage
-    exit 1
+        echo "${ERROR}✗ No input file provided${RESET}"
+        _show_usage
+        exit 1
     else
         if [[ -x "${SCRIPT_DIR}/mkvnote-gui" ]]; then
             "${SCRIPT_DIR}/mkvnote-gui"
