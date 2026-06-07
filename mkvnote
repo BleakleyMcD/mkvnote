@@ -469,7 +469,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--no-overwrite)
             NO_OVERWRITE=true
-            shift
             ;;
         -r|--remove)
             TAG_REMOVE_KEY="${2}"
