@@ -412,7 +412,7 @@ _write_tags_from_extracted(){
 
 _check_dependencies csvprintf xmlstarlet mkvpropedit mkvextract xml2csv cowsay
 
-if [[ ! -t 0 ]]; then
+if [[ ! -t 0 ]] && [[ $# -gt 0 ]]; then
     STDIN_TMP="$(_maketemp).csv"
     cat > "${STDIN_TMP}"
     set -- "${STDIN_TMP}" "$@"
@@ -420,9 +420,23 @@ fi
 
 # Handle no arguments
 if [[ $# -eq 0 ]]; then
+    if [[ -t 0 ]]; then
     echo "${ERROR}✗ No input file provided${RESET}"
     _show_usage
     exit 1
+    else
+        if [[ -x "${SCRIPT_DIR}/mkvnote-gui" ]]; then
+            "${SCRIPT_DIR}/mkvnote-gui"
+        elif [[ -x "${SCRIPT_DIR}/_build/mkvnote-gui" ]]; then
+            "${SCRIPT_DIR}/_build/mkvnote-gui"
+        elif command -v mkvnote-gui &>/dev/null; then
+            mkvnote-gui
+        else
+            echo "${ERROR}mkvnote-gui not found.${RESET}" >&2
+            exit 1
+        fi
+        exit 0
+    fi
 fi
 
 # Parse arguments
