@@ -1,0 +1,29 @@
+#include <QApplication>
+#include <QMessageBox>
+#include <QFileInfo>
+#include <QFileDialog>
+#include <QDir>
+#include "mainwindow.h"
+
+int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    app.setApplicationName("mkvnote");
+    app.setApplicationVersion("1.0.0");
+    app.setOrganizationName("NMAAHC");
+
+    QString inputFile;
+    if (argc >= 2) {
+        inputFile = QString::fromLocal8Bit(argv[1]);
+        QFileInfo fi(inputFile);
+        if (!fi.exists() || !fi.isFile()) {
+            QMessageBox::critical(nullptr, "mkvnote",
+                QString("File not found: %1").arg(inputFile));
+            return 1;
+        }
+    }
+
+    MainWindow w(inputFile);
+    w.show();
+    return app.exec();
+}
