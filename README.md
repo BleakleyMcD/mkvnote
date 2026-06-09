@@ -1,19 +1,27 @@
 # mkvnote
 
-A GTK-based GUI tool for editing MKV (Matroska) file metadata tags, built for the Smithsonian National Museum of African American History and Culture (NMAAHC) archival standards.
+A CLI and GUI tool for embedding key:value tags in Matroska (MKV) files, built for the Smithsonian National Museum of African American History and Culture (NMAAHC) archival standards.
 
 ## Overview
 
-mkvnote provides a graphical interface for viewing and modifying global tags embedded in Matroska video files. It supports single-file GUI editing, batch tagging via CSV, tag export to CSV, and tag inspection from the command line. Tags are organized into read-only technical fields, NMAAHC standard tags, and any extra tags already present in the file.
+mkvnote provides tools for viewing and modifying global tags embedded in Matroska video files. It supports single-file GUI editing, batch tagging via CSV, tag export to CSV, and tag inspection from the command line. Tags are organized into read-only technical fields, NMAAHC standard tags, and any extra tags already present in the file.
+
+mkvnote has two components:
+
+| Component | Description |
+|-----------|-------------|
+| `mkvnote` | Bash CLI for batch tagging, CSV export, tag inspection, and setting or removing individual tags. Launches the GUI when given a single MKV file. |
+| `mkvnote-gui` | Qt 6 graphical editor for viewing and editing tags on a single MKV file. |
 
 Developed by Smithsonian NMAAHC in collaboration with Dave Rice.
 
 ## Features
 
-- **GUI metadata editor** — GTK dialog for viewing and editing tags on a single MKV file
+- **GUI metadata editor** — Qt window for viewing and editing tags on a single MKV file
 - **CSV batch tagging** — embed metadata from a CSV into multiple MKV files at once
 - **CSV export** — extract tags from one or more MKV files into CSV format
 - **Tag inspection** — formatted table output (`-i`) and literal/debug output (`-ii`)
+- **Single-tag operations** — set (`-s`) or remove (`-r`) one tag across multiple files from the command line
 - **Read-only protection** — technical tags (`ENCODER`, `VIDEO_STREAM_HASH`, `AUDIO_STREAM_HASH`) and attachment info are displayed but not editable
 - **Multi-line field support** — `DESCRIPTION`, `ENCODER_SETTINGS`, `_PRE_TRANSFER_NOTES`, and `_TRANSFER_NOTES` render as multi-line text areas
 - **Logging** — every write operation creates a `<filename>_mkvnote_tags.log` alongside the MKV with timestamps, tag values, XML content, and mkvpropedit results
@@ -59,31 +67,64 @@ Tags in **bold** are mandatory. `_ORIGINAL_FPS` is required if motion picture fi
 
 ## Installation
 
-### Dependencies
+### Runtime dependencies (CLI)
 
 | Tool | Purpose |
 |------|---------|
 | `mkvtoolnix` | `mkvpropedit`, `mkvextract` |
-| `gtkdialog` | GTK GUI rendering |
 | `xmlstarlet` | XML processing |
-| `mediainfo` | Fallback attachment detection |
-| `perl` | XML character escaping |
-| `csvprintf` | CSV-to-XML conversion |
-| `xml2csv` | XML-to-CSV conversion |
+| `csvprintf` | CSV-to-XML conversion (also provides `xml2csv` for XML-to-CSV) |
+| `cowsay` | Terminal output |
+
+### Build dependencies (GUI)
+
+| Tool | Purpose |
+|------|---------|
+| `cmake` | Build system (3.16+) |
+| `qt` | Qt 6 (Core, Widgets, Xml) |
 
 ### macOS
 
 ```bash
-brew install mkvtoolnix xmlstarlet mediainfo gtkdialog csvprintf
-```
+# CLI dependencies
+brew install mkvtoolnix xmlstarlet csvprintf cowsay
 
-XQuartz is required for GTK display on macOS.
+# GUI build dependencies
+brew install cmake qt
+```
 
 > **Note:** mkvnote requires **bash 4.0+** for associative arrays. macOS ships with bash 3.2. Install a newer bash via Homebrew (`brew install bash`) and ensure it appears in your `PATH` before the system version.
 
 ### Linux
 
 Install the dependencies via your distribution's package manager (e.g., `apt`, `dnf`, `pacman`).
+
+### Building the GUI
+
+From the repository root:
+
+```bash
+./build
+```
+
+The `build` script checks for cmake and Qt 6, then runs the cmake configure and build steps. Run `./build clean` to remove the build directory first. Equivalently, you can run cmake directly:
+
+```bash
+cmake -B _build
+cmake --build _build
+```
+
+Either way produces `_build/mkvnote-gui`. The `mkvnote` script looks for `mkvnote-gui` in its own directory first, then in `_build/`, then on your `PATH`.
+
+To install both the CLI script and the GUI system-wide:
+
+```bash
+sudo cmake --install _build
+```
+
+### Releases
+
+Source archives are available from the [releases page](https://github.com/NMAAHC/mkvnote/releases). The latest release is [v1.0.0](https://github.com/NMAAHC/mkvnote/releases/tag/v1.0.0).
 
 ## Usage
 
@@ -93,7 +134,9 @@ Install the dependencies via your distribution's package manager (e.g., `apt`, `
 mkvnote video.mkv
 ```
 
-Opens a GTK window with all global tags organized into sections. Edit values and click **Tag-On!** to write, or **Cancel** to discard.
+Opens a Qt window with all global tags organized into sections (Technical and Hashes, NMAAHC Tags, Empty NMAAHC Tags, Extra Existing Tags). Edit values and click **Tag-On!** to write, **Revert** to restore the loaded values, or **Cancel** to discard.
+
+`mkvnote-gui` can also be launched directly, with or without a file argument — without one, use **Open** to choose an MKV file.
 
 ### Batch tagging from CSV
 
@@ -123,6 +166,19 @@ mkvnote -ii file1.mkv file2.mkv
 
 The `-ii` flag makes value boundaries visible, useful for spotting trailing whitespace, empty strings, or line breaks that are hard to see in the formatted table.
 
+### Set or remove a single tag
+
+```bash
+# Set a tag (overwrites existing value by default)
+mkvnote -s KEY=VALUE file1.mkv file2.mkv
+
+# Set a tag, but fail if the key already has a value
+mkvnote -s KEY=VALUE -n file1.mkv
+
+# Remove a tag (no effect if the key doesn't exist)
+mkvnote -r KEY file1.mkv file2.mkv
+```
+
 ### Delete global tags
 
 ```bash
@@ -141,10 +197,13 @@ Removes all global tags except `ENCODER`. Prompts for confirmation. This is dest
 | `-i`, `--info` | Print tags in a formatted table |
 | `-ii` | Print tags as literal `TAG=(value)` for debugging |
 | `-d`, `--drop` | Delete all global tags (except ENCODER) |
+| `-s`, `--set` | Set a global tag (`-s KEY=VALUE`) |
+| `-n`, `--no-overwrite` | With `-s`, fail if the key already has a value |
+| `-r`, `--remove` | Remove a global tag by key |
 
 ## Log Files
 
-When tags are written (GUI or CSV mode), mkvnote creates a log file named `<filename>_mkvnote_tags.log` in the same directory as the MKV file. The log includes:
+When tags are written (GUI or CSV mode), mkvnote creates a log file in the same directory as the MKV file, named after it with the `.mkv` extension replaced by `_mkvnote_tags.log` (e.g., `video.mkv` → `video_mkvnote_tags.log`). The log includes:
 
 - Session timestamp and version
 - Each tag name and value being set
@@ -153,7 +212,7 @@ When tags are written (GUI or CSV mode), mkvnote creates a log file named `<file
 
 ## License
 
-See repository for license information.
+[GPL-3.0](LICENSE)
 
 ## Links
 
