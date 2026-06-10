@@ -74,7 +74,6 @@ Tags in **bold** are mandatory. `_ORIGINAL_FPS` is required if motion picture fi
 | `mkvtoolnix` | `mkvpropedit`, `mkvextract` |
 | `xmlstarlet` | XML processing |
 | `csvprintf` | CSV-to-XML conversion (also provides `xml2csv` for XML-to-CSV) |
-| `cowsay` | Terminal output |
 
 ### Build dependencies (GUI)
 
@@ -87,7 +86,7 @@ Tags in **bold** are mandatory. `_ORIGINAL_FPS` is required if motion picture fi
 
 ```bash
 # CLI dependencies
-brew install mkvtoolnix xmlstarlet csvprintf cowsay
+brew install mkvtoolnix xmlstarlet csvprintf
 
 # GUI build dependencies
 brew install cmake qt

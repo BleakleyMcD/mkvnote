@@ -205,7 +205,7 @@ ${CYAN}-r|--remove${RESET} remove a global tag
         $ mkvnote -r KEY file1.mkv file2.mkv
 
 ${BOLD}DEPENDENCIES${RESET}
-    Required: mkvtoolnix (mkvpropedit, mkvextract), xmlstarlet, mediainfo, perl
+    Required: mkvtoolnix (mkvpropedit, mkvextract), xmlstarlet, csvprintf (csvprintf, xml2csv)
     GUI:      mkvnote-gui (Qt-based, see mkvnote-gui)
 
 ${BOLD}ABOUT${RESET}
@@ -410,7 +410,7 @@ _write_tags_from_extracted(){
     echo '</Tags>'
 }
 
-_check_dependencies csvprintf xmlstarlet mkvpropedit mkvextract xml2csv cowsay
+_check_dependencies csvprintf xmlstarlet mkvpropedit mkvextract xml2csv
 
 if [[ ! -t 0 ]] && [[ $# -gt 0 ]]; then
     STDIN_TMP="$(_maketemp).csv"
