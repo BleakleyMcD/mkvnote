@@ -193,7 +193,7 @@ ${CYAN}-s|--set${RESET} set a global tag
         
         Example: mkvnote --set Lyrics="First I tried mkvnote ....." file.mkv
 
-${CYAN}-s|--set${RESET} prevent overwriting data while setting a tag
+${CYAN}-n|--no-overwrite${RESET} prevent overwriting data while setting a tag
 
         See the -s option above.
 
